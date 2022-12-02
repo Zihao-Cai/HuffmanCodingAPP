@@ -15,7 +15,6 @@ public:
     bool create(QFile* f);
     bool select(Point* tree,int upon,int &index1owest,int &indexlower);
     bool decode(QFile* f);
-    bool str_tobin(char* data);
     char* str_makeup(char* &src);
 };
 

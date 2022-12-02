@@ -31,14 +31,14 @@ bool Htree::create(QFile *f){
     }while(res!=-1);
     //文件读取完毕
     f->close();
-    delete [] buffer;
+
 
     this->tree = new Point[(2*n)*sizeof(Point)]();//为树开辟等量大小的存储空间,n个叶子结点需要2n-1个结点,这里分配2n个空间，使用1到2n-1下标
     for(int k=0;k<n;k++){
         (tree+k+1)->setdata((temptree+k)->getdata());
         (tree+k+1)->setweight((temptree+k)->getweight());
     }
-    delete[] temptree;//拷贝后释放临时存储
+
 
     for(int i=n+1;i<=2*n-1;i++){
         int lowest=1;int lower=2;
@@ -69,8 +69,7 @@ bool Htree::create(QFile *f){
         elements[r].codelength = (int)strlen(elements[r].code);
         wordsize += (tree+r)->getweight()*elements[r].codelength;
     }   //of for 所有字符回溯完毕
-    delete [] tree;
-    delete[] buf;   //所有编码均已存放在elements数组内,释放临时存储
+    //所有编码均已存放在elements数组内
 
     //下一步要将编码压缩后写入文件:
     QString new_filename = QString("C:/Users/蔡子豪/Desktop/Hufcod.dat");
@@ -93,16 +92,12 @@ bool Htree::create(QFile *f){
         if(*(sample+j) == '1')  *byte_writer |= (1<<(7-j));
         else    *byte_writer &= ~(1<<(7-j));
     }
-    if((stream.writeRawData(byte_writer,1)) == -1)
-    {   //这里将字符条目数量转化为了二进制写入文件开头
-        newfile.close();
-        return false;
-    }
+    if((stream.writeRawData(byte_writer,1)) == -1)  return false;
 
     //write wordsize
     ba = QString::number(wordsize,2).toLatin1();
     char* sizebox = new char[32]();
-    int len = (int)strlen(ba.data());
+    int len = sizeof (ba.data())-1;
     if(len != 32){
         for(int k=len-1;k>=0;k--){
         *(sizebox+k+32-len) = *(ba.data()+k);
@@ -110,22 +105,22 @@ bool Htree::create(QFile *f){
         for(int k=0;k<32-len;k++){
         *(sizebox+k) = '0';
         }
-    }//将sizebox补足32位
-    for(int k=0;k<4;k++){
-        for(int j=k*8;j<k*8+8;j++){
-            *(sample+j%8) = *(sizebox+j);
-        }
-        for(int j=0;j<8;j++){
-            if(*(sample+j) == '1'){
-                *byte_writer |= (1<<(7-j));
-            }else{
-                *byte_writer &= ~(1<<(7-j));
-            }
-        }
-        if(!(stream.writeRawData(byte_writer,1)))   return false;
+    }//将sizebox补足32位**********************************************鲨了我吧!
+    for(int i=0;i<8;i++){
+        *(sample+i) = *(sizebox+i);
     }
-    //write wordsize done
+    for(int j=0;j<8;j++){
+        if(*(sample+j) == '1'){
+            *byte_writer |= (1<<(7-j));
+        }else{
+            *byte_writer &= ~(1<<(7-j));
+        }
+    }
+    if(stream.writeRawData(byte_writer,1) == -1)    return false;
 
+
+    //write wordsize done**********************************************鲨了我吧!
+/*
     //下面写入3n条编码表项,格式为:   字符码长编码字符码长编码...
     for(int k=1;k<=n;k++){
         if(stream.writeRawData(&elements[k].char_,1) == -1)    return false;//写入字符
@@ -142,7 +137,7 @@ bool Htree::create(QFile *f){
         }//of for j->byte_8
         if(stream.writeRawData(byte_writer,1) == -1)    return false;//写入字符对应编码
     }//of for k->n 所有字符及其编码作为文件头写入完
-    newfile.close();
+
 
     //下面写入原文本内容
     //进行第二次读文件,读取每个字符用编码格式存入word
@@ -165,7 +160,6 @@ bool Htree::create(QFile *f){
     }//of while 文件全部读取完毕并编码存入word
     f->close();
 
-    if(!newfile.open(QIODevice::Append)) return false;
     cont = 0;
     for(int p=0;p<bytenum;p++){
         for(int j=0;j<8;j++){
@@ -197,9 +191,8 @@ bool Htree::create(QFile *f){
         if((stream.writeRawData(byte_writer,1)) == -1)  return false;
     }//尾部处理完成
     //压缩文本内容写入完
-    delete [] word;
-    delete byte_writer;
-    newfile.close();
+    newfile.close();*/
+
     return true;
 }
 
@@ -336,28 +329,28 @@ bool Htree::decode(QFile *f){
     decfile.close();//建立解压文件
 
     if(!decfile.open(QIODevice::WriteOnly)) return false;
-    QDataStream st(&decfile);
-
-
-
-
-
+    //QDataStream st(&decfile);
+    QString wordstr = QString(word);
+    int wordindex = wordsize-1;
+    int eleindex = 0;
+    while(wordstr != "\0"){
+        wordindex = wordsize-1;
+        eleindex = 0;
+        for(int k=1;k<=n;k++){
+            if(wordstr.indexOf(elements[k].code) != -1 && wordstr.indexOf(elements[k].code)<wordindex){
+                wordindex = wordstr.indexOf(elements[k].code);
+                eleindex = k;
+            }
+        }// of for ->travesal and search finished
+        *byte_reader = elements[eleindex].char_;
+        if(decfile.write(byte_reader,1) == -1)    return false;//写入解析出的字符
+        wordstr = wordstr.right(wordstr.length()-elements[eleindex].codelength);//截掉左边已写入部分
+    }
+    printf("ok\n");
     decfile.close();
     return true;
 }
 
-
-bool Htree::str_tobin(char* data){
-    if(*data == '\0')   return false;
-    int k=0;
-    do{
-        if(*(data+k)!='0' || *(data+k)!='1')    return false;
-
-
-        k++;
-    }while(*(data+k)!='\0');
-    return true;
-}
 
 
 char* Htree::str_makeup(char* &src){
