@@ -31,7 +31,7 @@ bool Htree::create(QFile *f){
     }while(res!=-1);
     //文件读取完毕
     f->close();
-
+    delete [] buffer;
 
     this->tree = new Point[(2*n)*sizeof(Point)]();//为树开辟等量大小的存储空间,n个叶子结点需要2n-1个结点,这里分配2n个空间，使用1到2n-1下标
     for(int k=0;k<n;k++){
@@ -69,6 +69,7 @@ bool Htree::create(QFile *f){
         elements[r].codelength = (int)strlen(elements[r].code);
         wordsize += (tree+r)->getweight()*elements[r].codelength;
     }   //of for 所有字符回溯完毕
+    delete [] tree;
     //所有编码均已存放在elements数组内
 
     //下一步要将编码压缩后写入文件:
@@ -86,7 +87,10 @@ bool Htree::create(QFile *f){
     char* sample = new char[8]();
     char* byte_writer = new char();
     QByteArray ba = QString::number(n,2).toLatin1();
-    sample = ba.data();
+    int splen = sizeof(ba.data())-1;
+    for(int k=0;k<splen;k++){
+        *(sample+k) = *(ba.data()+k);
+    }
     str_makeup(sample); //该方法将不足八位的二进制字符补足到八位对齐格式
     for(int j=0;j<8;j++){
         if(*(sample+j) == '1')  *byte_writer |= (1<<(7-j));
@@ -106,21 +110,20 @@ bool Htree::create(QFile *f){
         *(sizebox+k) = '0';
         }
     }//将sizebox补足32位**********************************************鲨了我吧!
-    for(int i=0;i<8;i++){
-        *(sample+i) = *(sizebox+i);
-    }
-    for(int j=0;j<8;j++){
-        if(*(sample+j) == '1'){
-            *byte_writer |= (1<<(7-j));
-        }else{
-            *byte_writer &= ~(1<<(7-j));
+    for(int r=0;r<4;r++){
+        //读取四次sizebox每次八位读取到sample内做位运算写入
+        for(int k=8*r;k<8*r+8;k++){
+            *(sample+k%8) = *(sizebox+k);
         }
+        for(int j=0;j<8;j++){
+            if(*(sample+j) == '1')  *byte_writer |= (1<<(7-j));
+            else    *byte_writer &= ~(1<<(7-j));
+        }
+        if((stream.writeRawData(byte_writer,1)) == -1)  return false;
     }
-    if(stream.writeRawData(byte_writer,1) == -1)    return false;
-
-
+    delete [] sizebox;
     //write wordsize done**********************************************鲨了我吧!
-/*
+
     //下面写入3n条编码表项,格式为:   字符码长编码字符码长编码...
     for(int k=1;k<=n;k++){
         if(stream.writeRawData(&elements[k].char_,1) == -1)    return false;//写入字符
@@ -191,8 +194,10 @@ bool Htree::create(QFile *f){
         if((stream.writeRawData(byte_writer,1)) == -1)  return false;
     }//尾部处理完成
     //压缩文本内容写入完
-    newfile.close();*/
-
+    newfile.close();
+    delete [] sample;
+    delete byte_writer;
+    delete [] word;
     return true;
 }
 
@@ -333,12 +338,14 @@ bool Htree::decode(QFile *f){
     QString wordstr = QString(word);
     int wordindex = wordsize-1;
     int eleindex = 0;
+    int indexof = -1;
     while(wordstr != "\0"){
-        wordindex = wordsize-1;
+        wordindex = wordstr.length()-2;
         eleindex = 0;
         for(int k=1;k<=n;k++){
-            if(wordstr.indexOf(elements[k].code) != -1 && wordstr.indexOf(elements[k].code)<wordindex){
-                wordindex = wordstr.indexOf(elements[k].code);
+            indexof = wordstr.indexOf(QString(elements[k].code));
+            if(indexof != -1 && indexof < wordindex){
+                wordindex = indexof;
                 eleindex = k;
             }
         }// of for ->travesal and search finished
@@ -348,6 +355,8 @@ bool Htree::decode(QFile *f){
     }
     printf("ok\n");
     decfile.close();
+
+
     return true;
 }
 
