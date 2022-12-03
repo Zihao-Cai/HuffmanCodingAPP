@@ -13,13 +13,14 @@ bool Htree::create(QFile *f){
     if(!f->open(QIODevice::ReadOnly))   return false;
     //读取数据
     Point* temptree = new Point[128*sizeof(Point)]();
-    char* buffer = new char[100]();
+    char* buffer = new char[1000]();
     int res = -1;
     int n = 0;//记录有效字符数
     do{
-        res = f->readLine(buffer,100);//读取一行
+        res = f->readLine(buffer,1000);//读取一行
         if(res!=-1){
             for(int i=0;i<res;i++){
+                if(!isascii(*(buffer+i)))   return false;
                 int j=0;
                 for(j=0;j<n;j++){
                     if(*(buffer+i)==(temptree+j)->getdata())    break;
@@ -101,7 +102,7 @@ bool Htree::create(QFile *f){
     //write wordsize
     ba = QString::number(wordsize,2).toLatin1();
     char* sizebox = new char[32]();
-    int len = sizeof (ba.data())-1;
+    int len = strlen(ba.data());
     if(len != 32){
         for(int k=len-1;k>=0;k--){
         *(sizebox+k+32-len) = *(ba.data()+k);
@@ -109,7 +110,7 @@ bool Htree::create(QFile *f){
         for(int k=0;k<32-len;k++){
         *(sizebox+k) = '0';
         }
-    }//将sizebox补足32位**********************************************鲨了我吧!
+    }//将sizebox补足32位
     for(int r=0;r<4;r++){
         //读取四次sizebox每次八位读取到sample内做位运算写入
         for(int k=8*r;k<8*r+8;k++){
@@ -122,7 +123,7 @@ bool Htree::create(QFile *f){
         if((stream.writeRawData(byte_writer,1)) == -1)  return false;
     }
     delete [] sizebox;
-    //write wordsize done**********************************************鲨了我吧!
+    //write wordsize done
 
     //下面写入3n条编码表项,格式为:   字符码长编码字符码长编码...
     for(int k=1;k<=n;k++){
@@ -335,43 +336,74 @@ bool Htree::decode(QFile *f){
 
     if(!decfile.open(QIODevice::WriteOnly)) return false;
     //QDataStream st(&decfile);
-    QString wordstr = QString(word);
-    int wordindex = wordsize-1;
     int eleindex = 0;
     int indexof = -1;
-    while(wordstr != "\0"){
-        wordindex = wordstr.length()-2;
-        eleindex = 0;
-        for(int k=1;k<=n;k++){
-            indexof = wordstr.indexOf(QString(elements[k].code));
-            if(indexof != -1 && indexof < wordindex){
-                wordindex = indexof;
+    while(str_length(word) > 0){
+        eleindex = 1;
+        int k = 1;
+        for(k=1;k<=n;k++){
+            indexof = str_search(word,elements[k].code);
+            if(indexof == 0){
                 eleindex = k;
+                break;
             }
         }// of for ->travesal and search finished
+        if(k == n+1)    return false;
         *byte_reader = elements[eleindex].char_;
         if(decfile.write(byte_reader,1) == -1)    return false;//写入解析出的字符
-        wordstr = wordstr.right(wordstr.length()-elements[eleindex].codelength);//截掉左边已写入部分
+        str_cut(word,wordsize,elements[eleindex].codelength);//截掉左边已写入部分的编码
     }
-    printf("ok\n");
     decfile.close();
-
-
+    printf("ok\n");
     return true;
 }
 
 
 
-char* Htree::str_makeup(char* &src){
+void Htree::str_makeup(char* &src){
     int len = (int)strlen(src);
-    if(len == 8)   return src;
+    if(len == 8)   return;
     for(int k=len-1;k>=0;k--){
         *(src+k+8-len) = *(src+k);
     }
     for(int k=0;k<8-len;k++){
         *(src+k) = '0';
     }
-    return src;
+    return;
+}
+
+
+int Htree::str_length(char *word){
+    int ct = 0;
+    while(*(word+ct) == '0' || *(word+ct) == '1'){
+        ct++;
+    }
+    return ct;
+}
+
+
+
+int Htree::str_search(char *src, char *sub){
+    int sublen = str_length(sub);
+    int j = 0;
+    for(j=0;j<sublen;j++){
+        if(*(sub+j) != *(src+j)){
+            break;
+        }
+    }
+    if(j == sublen) return 0;
+    return -1;
+}
+
+void Htree::str_cut(char *&src,int wordsize, int cutlen){
+    int leftlen = str_length(src)-cutlen;
+    for(int i=0;i<leftlen;i++){
+        *(src+i) = *(src+i+cutlen);
+    }
+    for(int j=leftlen;j<wordsize;j++){
+        *(src+j) = '\0';
+    }
+    return;
 }
 
 

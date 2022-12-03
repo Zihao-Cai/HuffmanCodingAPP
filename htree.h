@@ -15,7 +15,10 @@ public:
     bool create(QFile* f);
     bool select(Point* tree,int upon,int &index1owest,int &indexlower);
     bool decode(QFile* f);
-    char* str_makeup(char* &src);
+    void str_makeup(char* &src);
+    int str_length(char* word);
+    int str_search(char* src,char* sub);
+    void str_cut(char* &src,int wordsize,int cutlen);
 };
 
 #endif // HTREE_H
