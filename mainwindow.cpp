@@ -27,11 +27,13 @@ void MainWindow::codingbtn_clicked()
     tip.setStyleSheet("color:blue");
     tip.setIcon(QMessageBox::Information);
     tip.setWindowTitle("Information");
-    if(HT.create(file)){
-        tip.setText("Coding successfully!");
+    QString codpath;
+    if(HT.create(file,codpath)){
+        tip.setText("Coding successfully!\n" + codpath);
         tip.exec();
     }
     else{
+        tip.setIcon(QMessageBox::Warning);
         tip.setText("Coding failed!");
         tip.exec();
     }
@@ -46,11 +48,13 @@ void MainWindow::decodingbtn_clicked(){
     tip.setStyleSheet("color:blue");
     tip.setIcon(QMessageBox::Information);
     tip.setWindowTitle("Information");
-    if(ht.decode(file)){
-        tip.setText("Decoding successfully!");
+    QString decpath;
+    if(ht.decode(file,decpath)){
+        tip.setText("Decoding successfully!\n" + decpath);
         tip.exec();
     }
     else{
+        tip.setIcon(QMessageBox::Warning);
         tip.setText("Decoding failed!");
         tip.exec();
     }

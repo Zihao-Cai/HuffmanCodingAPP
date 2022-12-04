@@ -9,15 +9,15 @@ Point* Htree::gettree(){
     return tree;
 }
 
-bool Htree::create(QFile *f){
+bool Htree::create(QFile *f,QString &codpath){
     if(!f->open(QIODevice::ReadOnly))   return false;
     //读取数据
     Point* temptree = new Point[128*sizeof(Point)]();
-    char* buffer = new char[1000]();
+    char* buffer = new char[MAXOFLINE]();
     int res = -1;
     int n = 0;//记录有效字符数
     do{
-        res = f->readLine(buffer,1000);//读取一行
+        res = f->readLine(buffer,MAXOFLINE);//读取一行
         if(res!=-1){
             for(int i=0;i<res;i++){
                 if(!isascii(*(buffer+i)))   return false;
@@ -53,7 +53,7 @@ bool Htree::create(QFile *f){
     //每个叶子结点向上溯根,获得对应字符编码
     Element elements[n+1];//存储从1到n的有效字符和它的编码
     int wordsize = 0;
-    char* buf = new char[n]();
+    char* buf = new char[n]();//开辟n个空间存放编码,n结点编码最大位数为n-1,最后一位填上\0
     for(int r=1;r<=n;r++){
         elements[r].char_ = (tree+r)->getdata();
         *(buf+n-1) = '\0';
@@ -74,8 +74,10 @@ bool Htree::create(QFile *f){
     //所有编码均已存放在elements数组内
 
     //下一步要将编码压缩后写入文件:
-    QString new_filename = QString("C:/Users/蔡子豪/Desktop/Hufcod.dat");
+    QFileInfo info = QFileInfo(f->fileName());
+    QString new_filename = info.absolutePath() + "/" + info.baseName() + "_huf";
     QFile newfile(new_filename);
+    codpath = new_filename;
     newfile.open(QIODevice::WriteOnly);//以只写方式打开新文件,不存在则创建
     newfile.close();
 
@@ -92,7 +94,13 @@ bool Htree::create(QFile *f){
     for(int k=0;k<splen;k++){
         *(sample+k) = *(ba.data()+k);
     }
-    str_makeup(sample); //该方法将不足八位的二进制字符补足到八位对齐格式
+    int len_ = (int)strlen(sample);
+    for(int k=len_-1;k>=0;k--){
+            *(sample+k+8-len_) = *(sample+k);
+        }
+        for(int k=0;k<8-len_;k++){
+            *(sample+k) = '0';
+        }
     for(int j=0;j<8;j++){
         if(*(sample+j) == '1')  *byte_writer |= (1<<(7-j));
         else    *byte_writer &= ~(1<<(7-j));
@@ -130,18 +138,37 @@ bool Htree::create(QFile *f){
         if(stream.writeRawData(&elements[k].char_,1) == -1)    return false;//写入字符
         *byte_writer = (char) elements[k].codelength;
         if(stream.writeRawData(byte_writer,1) == -1)   return false;//写入码长
-        str_makeup(elements[k].code);
-        *byte_writer = '\0';
-        for(int j=0;j<8;j++){
-            if(*(elements[k].code+j) == '1'){
-                *byte_writer |= (1<<(7-j));
-            }else{
-                *byte_writer &= ~(1<<(7-j));
+        if(elements[k].codelength%8 == 0){
+            int btnum = elements[k].codelength/8;
+            for(int i=0;i<btnum;i++){
+                *byte_writer = '\0';
+                for(int j=8*i;j<8*i+8;j++){
+                    if(*(elements[k].code+j) == '1'){
+                        *byte_writer |= (1<<(7-j%8));
+                    }else{
+                        *byte_writer &= ~(1<<(7-j%8));
+                    }
+                }//of for j->byte_8
+                if(stream.writeRawData(byte_writer,1) == -1)    return false;
             }
-        }//of for j->byte_8
-        if(stream.writeRawData(byte_writer,1) == -1)    return false;//写入字符对应编码
+        }else{
+            int btnum = (elements[k].codelength/8+1);
+            int newlen = 8*btnum;
+            char* newcode = new char[newlen+1]();
+            str_makeup(elements[k].code,newcode,newlen);//将编码补足到8n位,其中n的值即为btnum
+            for(int i=0;i<btnum;i++){
+                *byte_writer = '\0';
+                for(int j=8*i;j<8*i+8;j++){
+                    if(*(newcode+j) == '1'){
+                        *byte_writer |= (1<<(7-j%8));
+                    }else{
+                        *byte_writer &= ~(1<<(7-j%8));
+                    }
+                }//of for j->byte_8
+                if(stream.writeRawData(byte_writer,1) == -1)    return false;
+            }
+        }
     }//of for k->n 所有字符及其编码作为文件头写入完
-
 
     //下面写入原文本内容
     //进行第二次读文件,读取每个字符用编码格式存入word
@@ -156,9 +183,10 @@ bool Htree::create(QFile *f){
             break;
         }
         }//找到对应的字符表项r
+        if(r == n+1)    {printf("error!\n");return false;}
         int templen = elements[r].codelength;
         for(int q = 0;q<templen;q++){
-            *(word+cont) = *(elements[r].code+q+8-templen);
+            *(word+cont) = *(elements[r].code+q);
             cont++;
         }//将读到的单个字符编码后存入word
     }//of while 文件全部读取完毕并编码存入word
@@ -220,7 +248,7 @@ bool Htree::select(Point *tree, int upon, int &indexlowest, int &indexlower){
 
 
 
-bool Htree::decode(QFile *f){
+bool Htree::decode(QFile *f,QString &decpath_){
     if(!f->open(QIODevice::ReadOnly))   return false;
     int wordsize = 0;
     QDataStream stream(f);
@@ -265,7 +293,7 @@ bool Htree::decode(QFile *f){
         if(stream.readRawData(byte_reader,1) == -1) return false;//读取每条字符
         elements[k].char_ = *byte_reader;
         if(stream.readRawData(byte_reader,1) == -1) return false;//读取码长
-        for(int j=0;j<8;j++){//解压码长
+        for(int j=0;j<8;j++){//解压码长,码长不可能超过128所以一字节就可以完全表达
             if((*byte_reader & 10000000) == 10000000){
                 *(sample+j) = '1';
             }else{
@@ -277,19 +305,51 @@ bool Htree::decode(QFile *f){
             if(*(sample+i) == '1') elements[k].codelength += pow(2,7-i);
         }    //码长解压完成
         elements[k].code = new char[elements[k].codelength]();//为编码分配内存空间,这一步省略将导致段错误
-        if(stream.readRawData(byte_reader,1) == -1) return false;//读取每个字符对应压缩编码
-        for(int j=0;j<8;j++){                 //解压字符编码
-            if((*byte_reader & 10000000) == 10000000){
-                *(sample+j) = '1';
-            }else{
-                *(sample+j) = '0';
+        if(elements[k].codelength%8 == 0){  //这是code刚好为8n倍数的情况
+            int btnum = elements[k].codelength/8;
+            for(int i=0;i<btnum;i++){
+                if(stream.readRawData(byte_reader,1) == -1) return false;
+                for(int j=0;j<8;j++){                 //解压字符编码
+                    if((*byte_reader & 10000000) == 10000000){
+                        *(sample+j) = '1';
+                    }else{
+                        *(sample+j) = '0';
+                    }
+                    *byte_reader <<= 1;               //每位运算一次左移一位
+                }//of for j->8_byte
+                for(int l=i*8;l<8*i+8;l++){
+                    *(elements[k].code+l) = *(sample+l%8);
+                }
             }
-            *byte_reader <<= 1;               //每位运算一次左移一位
-        }//of for j->8_byte
-        for(int l = 0,r = 8-elements[k].codelength;l<elements[k].codelength;l++,r++){
-            *(elements[k].code+l) = *(sample+r);
+        }else{  //这是code不足8n位数的情况,读取的是补码有8n位,需要去除补码
+            int btnum = elements[k].codelength/8+1;
+            int newlen = btnum*8;
+            int ct = 0;
+            for(int i=0;i<btnum;i++){
+                if(stream.readRawData(byte_reader,1) == -1) return false;
+                for(int j=0;j<8;j++){
+                    if((*byte_reader & 10000000) == 10000000){
+                        *(sample+j) = '1';
+                    }else{
+                        *(sample+j) = '0';
+                    }
+                    *byte_reader <<= 1;
+                }//of for j->8_byte
+                if(i == 0){ //第一个字节(i==0时)需要去除补码
+                    for(int r=newlen-elements[k].codelength;r<8;r++){
+                        *(elements[k].code+ct) = *(sample+r);
+                        ct++;
+                    }
+                }else{  //后面字节不需要去除补码
+                    for(int r=0;r<8;r++){
+                        *(elements[k].code+ct) = *(sample+r);
+                        ct++;
+                    }
+                }
+            }
         }
     }//of for k->n  字符编码表读取解压完毕
+
 
     int rearlack = 8-wordsize%8;
     int bytenum = wordsize/8;//这里没有考虑尾部冗余部分,届时单独处理
@@ -329,8 +389,11 @@ bool Htree::decode(QFile *f){
     f->close();
 
     //接下来依据elements编码表将word逐次转换成原字符,同时写入解压新文件
-    QString decpath = QString("C:/Users/蔡子豪/Desktop/Hufdec.dat");
+    QFileInfo info = QFileInfo(f->fileName());
+    QString srcname = "/" + info.baseName();
+    QString decpath = info.absolutePath() + "/" + info.baseName() + "_dec";
     QFile decfile(decpath);
+    decpath_ = decpath;
     if(!decfile.open(QIODevice::WriteOnly)) return false;
     decfile.close();//建立解压文件
 
@@ -354,20 +417,20 @@ bool Htree::decode(QFile *f){
         str_cut(word,wordsize,elements[eleindex].codelength);//截掉左边已写入部分的编码
     }
     decfile.close();
-    printf("ok\n");
     return true;
 }
 
 
 
-void Htree::str_makeup(char* &src){
+void Htree::str_makeup(char* src,char* &newcode,int newlen){
     int len = (int)strlen(src);
-    if(len == 8)   return;
-    for(int k=len-1;k>=0;k--){
-        *(src+k+8-len) = *(src+k);
+    if(len%8 == 0)   return;
+    *(newcode+newlen) = '\0';//0~newlen-1空间留给newcode
+    for(int k=len-1,j=newlen-1;k>=0;k--,j--){
+        *(newcode+j) = *(src+k);
     }
-    for(int k=0;k<8-len;k++){
-        *(src+k) = '0';
+    for(int k=0;k<newlen-len;k++){
+        *(newcode+k) = '0';
     }
     return;
 }
